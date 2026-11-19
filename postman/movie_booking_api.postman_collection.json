@@ -1,0 +1,178 @@
+{
+  "info": {
+    "name": "Movie Booking API",
+    "description": "Covers movies/shows browsing, booking creation, payment (incl. idempotency), and cancellation/refunds. Matches 03_api_contract.md.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://127.0.0.1:5000" },
+    { "key": "booking_id", "value": "" },
+    { "key": "idem_key", "value": "idem-key-001" }
+  ],
+  "item": [
+    {
+      "name": "GET /movies",
+      "request": { "method": "GET", "url": "{{base_url}}/movies" },
+      "event": [{
+        "listen": "test",
+        "script": { "exec": [
+          "pm.test('status is 200', () => pm.response.to.have.status(200));",
+          "pm.test('returns an array', () => Array.isArray(pm.response.json()));"
+        ]}
+      }]
+    },
+    {
+      "name": "GET /shows/1/seats",
+      "request": { "method": "GET", "url": "{{base_url}}/shows/1/seats" },
+      "event": [{
+        "listen": "test",
+        "script": { "exec": [
+          "pm.test('status is 200', () => pm.response.to.have.status(200));",
+          "pm.test('has 10 seats', () => pm.response.json().seats.length === 10);"
+        ]}
+      }]
+    },
+    {
+      "name": "POST /bookings - valid (seats 1,2)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{base_url}}/bookings",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"show_id\":1,\"customer_name\":\"Riya Sharma\",\"customer_email\":\"riya@example.com\",\"seat_ids\":[1,2]}"
+        }
+      },
+      "event": [{
+        "listen": "test",
+        "script": { "exec": [
+          "pm.test('status is 201', () => pm.response.to.have.status(201));",
+          "const body = pm.response.json();",
+          "pm.test('status is PENDING_PAYMENT', () => body.status === 'PENDING_PAYMENT');",
+          "pm.collectionVariables.set('booking_id', body.id);"
+        ]}
+      }]
+    },
+    {
+      "name": "POST /bookings - 7 seats (over limit)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{base_url}}/bookings",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"show_id\":1,\"customer_name\":\"Sam\",\"customer_email\":\"sam@example.com\",\"seat_ids\":[3,4,5,6,7,8,9]}"
+        }
+      },
+      "event": [{
+        "listen": "test",
+        "script": { "exec": [
+          "pm.test('status is 422', () => pm.response.to.have.status(422));",
+          "pm.test('error code is BOOKING_LIMIT_EXCEEDED', () => pm.response.json().error.code === 'BOOKING_LIMIT_EXCEEDED');"
+        ]}
+      }]
+    },
+    {
+      "name": "POST /bookings - already-held seat",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{base_url}}/bookings",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"show_id\":1,\"customer_name\":\"Amit\",\"customer_email\":\"amit@example.com\",\"seat_ids\":[1]}"
+        }
+      },
+      "event": [{
+        "listen": "test",
+        "script": { "exec": [
+          "pm.test('status is 409', () => pm.response.to.have.status(409));",
+          "pm.test('error code is SEAT_NOT_AVAILABLE', () => pm.response.json().error.code === 'SEAT_NOT_AVAILABLE');"
+        ]}
+      }]
+    },
+    {
+      "name": "POST /bookings/{{booking_id}}/pay - tok_success",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Idempotency-Key", "value": "{{idem_key}}" }
+        ],
+        "url": "{{base_url}}/bookings/{{booking_id}}/pay",
+        "body": { "mode": "raw", "raw": "{\"gateway_token\":\"tok_success\"}" }
+      },
+      "event": [{
+        "listen": "test",
+        "script": { "exec": [
+          "pm.test('status is 200', () => pm.response.to.have.status(200));",
+          "const body = pm.response.json();",
+          "pm.test('booking is CONFIRMED', () => body.booking_status === 'CONFIRMED');",
+          "pm.test('payment is SUCCESS', () => body.payment_status === 'SUCCESS');"
+        ]}
+      }]
+    },
+    {
+      "name": "POST pay again - same Idempotency-Key (replay)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Idempotency-Key", "value": "{{idem_key}}" }
+        ],
+        "url": "{{base_url}}/bookings/{{booking_id}}/pay",
+        "body": { "mode": "raw", "raw": "{\"gateway_token\":\"tok_success\"}" }
+      },
+      "event": [{
+        "listen": "test",
+        "script": { "exec": [
+          "pm.test('status is 200', () => pm.response.to.have.status(200));",
+          "pm.test('still SUCCESS, no double charge', () => pm.response.json().payment_status === 'SUCCESS');"
+        ]}
+      }]
+    },
+    {
+      "name": "POST pay again - new key on CONFIRMED booking",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Idempotency-Key", "value": "idem-key-002" }
+        ],
+        "url": "{{base_url}}/bookings/{{booking_id}}/pay",
+        "body": { "mode": "raw", "raw": "{\"gateway_token\":\"tok_success\"}" }
+      },
+      "event": [{
+        "listen": "test",
+        "script": { "exec": [
+          "pm.test('status is 409', () => pm.response.to.have.status(409));",
+          "pm.test('error code is ALREADY_PAID', () => pm.response.json().error.code === 'ALREADY_PAID');"
+        ]}
+      }]
+    },
+    {
+      "name": "DELETE /bookings/{{booking_id}} - cancel & refund",
+      "request": { "method": "DELETE", "url": "{{base_url}}/bookings/{{booking_id}}" },
+      "event": [{
+        "listen": "test",
+        "script": { "exec": [
+          "pm.test('status is 200', () => pm.response.to.have.status(200));",
+          "const body = pm.response.json();",
+          "pm.test('booking is CANCELLED', () => body.booking_status === 'CANCELLED');",
+          "pm.test('refund_percentage is 100 or 50', () => [100,50].includes(body.refund_percentage));"
+        ]}
+      }]
+    },
+    {
+      "name": "DELETE /bookings/{{booking_id}} - cancel again (should fail)",
+      "request": { "method": "DELETE", "url": "{{base_url}}/bookings/{{booking_id}}" },
+      "event": [{
+        "listen": "test",
+        "script": { "exec": [
+          "pm.test('status is 409', () => pm.response.to.have.status(409));",
+          "pm.test('error code is CANCELLATION_NOT_ALLOWED', () => pm.response.json().error.code === 'CANCELLATION_NOT_ALLOWED');"
+        ]}
+      }]
+    }
+  ]
+}
