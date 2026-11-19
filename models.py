@@ -88,8 +88,11 @@ CREATE TABLE IF NOT EXISTS bookings (
 CREATE TABLE IF NOT EXISTS booking_seats (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     booking_id INTEGER NOT NULL REFERENCES bookings(id),
-    seat_id INTEGER NOT NULL REFERENCES seats(id),
-    UNIQUE (seat_id)
+    seat_id INTEGER NOT NULL REFERENCES seats(id)
+    -- No UNIQUE(seat_id) here: a seat is reused across many bookings over its
+    -- lifetime (book -> cancel -> book again). Preventing double-booking is
+    -- already handled by the atomic status check in create_booking(), which
+    -- only moves a seat to HELD if its current status is AVAILABLE.
 );
 
 CREATE TABLE IF NOT EXISTS payments (

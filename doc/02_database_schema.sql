@@ -70,8 +70,10 @@ CREATE TABLE IF NOT EXISTS bookings (
 CREATE TABLE IF NOT EXISTS booking_seats (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     booking_id  INTEGER NOT NULL REFERENCES bookings(id),
-    seat_id     INTEGER NOT NULL REFERENCES seats(id),
-    UNIQUE (seat_id)   -- a seat can only ever belong to ONE active booking row
+    seat_id     INTEGER NOT NULL REFERENCES seats(id)
+    -- Deliberately no UNIQUE(seat_id): a seat is booked, cancelled, and
+    -- re-booked many times over its life. Double-booking PROTECTION comes
+    -- from the seats.status check in the app layer, not from this table.
 );
 
 -- ---------------------------------------------------------------------
